@@ -1,4 +1,4 @@
-module sigs.k8s.io/controller-tools
+module github.com/alex123012/deckhouse-controller-tools
 
 go 1.20
 
