@@ -133,6 +133,7 @@ golangci-lint run --disable-all \
     --enable=gosec \
     --enable=gofmt \
     --deadline=5m \
+    --modules-download-mode=vendor \
     ./pkg/... ./cmd/...
 
 # --enable=structcheck \  # doesn't understand embedded structs
@@ -141,4 +142,4 @@ golangci-lint run --disable-all \
 
 header_text "running go test"
 
-go test -race ./pkg/... ./cmd/... -parallel 4
+go test -mod=vendor -race ./pkg/... ./cmd/... -parallel 4

@@ -59,6 +59,7 @@ type CronJobSpec struct {
 	// This flag tells the controller to suspend subsequent executions, it does
 	// not apply to already started executions.  Defaults to false.
 	// +optional
+	// +deckhouse:xdoc:default=true
 	Suspend *bool `json:"suspend,omitempty"`
 
 	// This tests that non-serialized fields aren't included in the schema.
@@ -292,6 +293,9 @@ type JustNestedObject NestedObject
 // +kubebuilder:validation:MinProperties=1
 // +kubebuilder:validation:MaxProperties=2
 type MinMaxObject struct {
+	// +deckhouse:xdoc:default=14
+	// +deckhouse:xdoc:example="test line 1\ntest line 2"
+	// +deckhouse:xdoc:example="test line 3\ntest line 4"
 	Foo string `json:"foo,omitempty"`
 	Bar string `json:"bar,omitempty"`
 	Baz string `json:"baz,omitempty"`
@@ -306,6 +310,7 @@ type unexportedStruct struct {
 }
 
 type ExportedStruct struct {
+	// +deckhouse:xdoc:default="foo test default value for doc"
 	// This tests that exported fields are not skipped in the schema generation
 	Baz string `json:"baz"`
 
@@ -489,6 +494,7 @@ type CronJobStatus struct {
 	// Information about the last time the job was successfully scheduled,
 	// with microsecond precision.
 	// +optional
+	// +kubebuilder:validation:OneOf=./cronjob_types.go=OneOfLastScheduleMicroTime
 	LastScheduleMicroTime *metav1.MicroTime `json:"lastScheduleMicroTime,omitempty"`
 
 	// LastActiveLogURL specifies the logging url for the last started job
@@ -501,6 +507,11 @@ type CronJobStatus struct {
 
 	Runtime *Duration `json:"duration,omitempty"`
 }
+
+const OneOfLastScheduleMicroTime = `
+- format: date-time
+- type: string
+`
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status

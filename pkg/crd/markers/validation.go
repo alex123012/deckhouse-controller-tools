@@ -17,11 +17,17 @@ limitations under the License.
 package markers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
+	"strings"
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/yaml"
 
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -64,6 +70,7 @@ var ValidationMarkers = mustMakeAllWithPrefix("kubebuilder:validation", markers.
 	Enum(nil),
 	Format(""),
 	Type(""),
+	OneOf(""),
 	XPreserveUnknownFields{},
 	XEmbeddedResource{},
 	XIntOrString{},
@@ -94,6 +101,12 @@ var FieldOnlyMarkers = []*definitionWithHelp{
 
 	must(markers.MakeDefinition(SchemalessName, markers.DescribesField, Schemaless{})).
 		WithHelp(Schemaless{}.Help()),
+
+	must(markers.MakeAnyTypeDefinition("deckhouse:xdoc:default", markers.DescribesField, DeckhouseDocDefault{})).
+		WithHelp(DeckhouseDocDefault{}.Help()),
+
+	must(markers.MakeAnyTypeDefinition("deckhouse:xdoc:example", markers.DescribesField, DeckhouseDocExample{})).
+		WithHelp(DeckhouseDocExample{}.Help()),
 }
 
 // ValidationIshMarkers are field-and-type markers that don't fall under the
@@ -517,4 +530,165 @@ func (m XValidation) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
 		Message: m.Message,
 	})
 	return nil
+}
+
+// +controllertools:marker:generateHelp:category=CRD
+
+// DeckhouseDocDefault configures the additional x-doc-default field
+// for property with default value for deckhouse documentation.
+type DeckhouseDocDefault struct {
+	Value interface{}
+}
+
+func (m DeckhouseDocDefault) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+	marshalledDocDefault, err := json.Marshal(m.Value)
+	if err != nil {
+		return err
+	}
+	schema.XDocDefault = &apiext.JSON{Raw: marshalledDocDefault}
+	return nil
+}
+
+// +controllertools:marker:generateHelp:category=CRD
+
+// DeckhouseDocDefault configures the additional x-doc-example field
+// for property with example usage for deckhouse documentation.
+type DeckhouseDocExample struct {
+	Value interface{}
+}
+
+func (m DeckhouseDocExample) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+	marshalledDocExample, err := json.Marshal(m.Value)
+	if err != nil {
+		return err
+	}
+	if schema.XDocExample != nil && len(schema.XDocExample.Raw) > 0 {
+		fullString := bytes.Join([][]byte{
+			escapeString(schema.XDocExample.Raw),
+			escapeString(marshalledDocExample),
+		}, []byte("\n"))
+		marshalFullString, err := json.Marshal(string(fullString))
+		if err != nil {
+			return err
+		}
+		marshalledDocExample = marshalFullString
+	}
+	schema.XDocExample = &apiext.JSON{Raw: marshalledDocExample}
+
+	return nil
+}
+
+func escapeString(b []byte) []byte {
+	return bytes.ReplaceAll(bytes.ReplaceAll(b, []byte("\""), nil), []byte("\\n"), []byte("\n"))
+}
+
+// +controllertools:marker:generateHelp:category=CRD
+
+// OneOf configures file name and variable name at package level
+// that will be used to generate oneOf CRD field.
+// for Example, for comment deckhouse:one:of=./cronjob_types.go=OneOfCRD
+// generator will search in package root for file ./cronjob_types.go and declared variable "OneOfCRD" in it
+//
+// file: ./cronjob_types.go:
+//
+//	package api
+//
+//	import (
+//		metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+//	)
+//
+//	const OneOfCRD = `
+//	- required: [layout]
+//	  properties:
+//		layout:
+//		  enum: [Standard]
+//	- required: [layout]
+//	  properties:
+//		layout:
+//		  enum: [WithoutNAT]
+//	  masterNodeGroup:
+//		properties:
+//		  instanceClass:
+//			type: object
+//			properties:
+//			  disableExternalIP:
+//				enum: [false]
+//
+// `
+//
+// const "OneOfCRD" would be parsed to oneOf field of CRD as it is
+type OneOf string
+
+func (m OneOf) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
+	jsonProps, err := parseJSONSchemaPropsFromMarkerValue(string(m))
+	if err != nil {
+		return err
+	}
+	schema.OneOf = append(schema.OneOf, jsonProps...)
+	return nil
+}
+
+func parseJSONSchemaPropsFromMarkerValue(m string) ([]apiext.JSONSchemaProps, error) {
+	fileName, varName, err := fileNameVarNameFromMarkerValue(m)
+	if err != nil {
+		return nil, err
+	}
+
+	constant, err := constFromFileNameVarName(fileName, varName)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonProps, err := parseJSONSchemaPropsFromAstVariable(constant)
+	if err != nil {
+		return nil, err
+	}
+	return jsonProps, nil
+}
+
+func fileNameVarNameFromMarkerValue(m string) (string, string, error) {
+	fc := strings.SplitN(string(m), "=", 2)
+	if len(fc) < 2 {
+		return "", "", fmt.Errorf("deckhouse:one:of not in format '<file name>=<variable name>'")
+	}
+	return fc[0], fc[1], nil
+}
+
+func constFromFileNameVarName(fileName, varName string) (*ast.ValueSpec, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), fileName, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	astVar, ok := file.Scope.Objects[varName]
+	if !ok {
+		return nil, fmt.Errorf("no variable found with name '%s' in file '%s'", varName, fileName)
+	}
+
+	if astVar.Kind.String() != "const" {
+		return nil, fmt.Errorf("variable '%s' from file '%s' should be 'const'", varName, fileName)
+	}
+
+	variable, ok := astVar.Decl.(*ast.ValueSpec)
+	if !ok {
+		return nil, fmt.Errorf("bad const format, should be 'const <var name> = ...' at package level")
+	}
+	return variable, nil
+}
+
+func parseJSONSchemaPropsFromAstVariable(variable *ast.ValueSpec) ([]apiext.JSONSchemaProps, error) {
+	value, ok := variable.Values[0].(*ast.BasicLit)
+	if !ok {
+		return nil, fmt.Errorf("bad variable format, should be 'var/const <var name> = <string value>' at package level")
+	}
+
+	if value.Kind.String() != "STRING" {
+		return nil, fmt.Errorf("variable should be of type `string`")
+	}
+
+	stringValue := strings.Trim(value.Value, "`\"'")
+	var props []apiext.JSONSchemaProps
+	if err := yaml.Unmarshal([]byte(stringValue), &props); err != nil {
+		return nil, err
+	}
+	return props, nil
 }

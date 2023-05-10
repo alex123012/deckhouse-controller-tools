@@ -25,6 +25,38 @@ import (
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
 
+func (DeckhouseDocDefault) Help() *markers.DefinitionHelp {
+	return &markers.DefinitionHelp{
+		Category: "CRD",
+		DetailedHelp: markers.DetailedHelp{
+			Summary: "configures the additional x-doc-default field for property with default value for deckhouse documentation.",
+			Details: "",
+		},
+		FieldHelp: map[string]markers.DetailedHelp{
+			"Value": {
+				Summary: "",
+				Details: "",
+			},
+		},
+	}
+}
+
+func (DeckhouseDocExample) Help() *markers.DefinitionHelp {
+	return &markers.DefinitionHelp{
+		Category: "CRD",
+		DetailedHelp: markers.DetailedHelp{
+			Summary: "DeckhouseDocDefault configures the additional x-doc-example field for property with example usage for deckhouse documentation.",
+			Details: "",
+		},
+		FieldHelp: map[string]markers.DetailedHelp{
+			"Value": {
+				Summary: "",
+				Details: "",
+			},
+		},
+	}
+}
+
 func (Default) Help() *markers.DefinitionHelp {
 	return &markers.DefinitionHelp{
 		Category: "CRD validation",
@@ -275,6 +307,17 @@ func (Nullable) Help() *markers.DefinitionHelp {
 		DetailedHelp: markers.DetailedHelp{
 			Summary: "marks this field as allowing the \"null\" value. ",
 			Details: "This is often not necessary, but may be helpful with custom serialization.",
+		},
+		FieldHelp: map[string]markers.DetailedHelp{},
+	}
+}
+
+func (OneOf) Help() *markers.DefinitionHelp {
+	return &markers.DefinitionHelp{
+		Category: "CRD",
+		DetailedHelp: markers.DetailedHelp{
+			Summary: "configures file name and variable name at package level that will be used to generate oneOf CRD field. for Example, for comment deckhouse:one:of=./cronjob_types.go=OneOfCRD generator will search in package root for file ./cronjob_types.go and declared variable \"OneOfCRD\" in it ",
+			Details: "file: ./cronjob_types.go: \n package api \n import ( metav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\" ) \n const OneOfCRD = ` - required: [layout] properties: layout: enum: [Standard] - required: [layout] properties: layout: enum: [WithoutNAT] masterNodeGroup: properties: instanceClass: type: object properties: disableExternalIP: enum: [false] \n ` \n const \"OneOfCRD\" would be parsed to oneOf field of CRD as it is",
 		},
 		FieldHelp: map[string]markers.DetailedHelp{},
 	}
